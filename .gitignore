@@ -1,0 +1,26 @@
+# Rust
+/desktop/target/
+**/*.rs.bk
+
+# Go
+/backend/bin/
+/backend/coverage.out
+*.exe
+*.test
+
+# Среда и секреты
+.env
+.env.*
+!.env.example
+
+# Локальные данные приложения
+*.db
+*.sqlite
+*.log
+
+# IDE / OC
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db

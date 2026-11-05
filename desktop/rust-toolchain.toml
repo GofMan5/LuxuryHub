@@ -1,0 +1,5 @@
+# Тулчейн клиента. GPUI-CE 0.3.0 требует Rust 1.95+, проверено на 1.99.0.
+[toolchain]
+channel = "1.99.0"
+profile = "minimal"
+components = ["rustfmt", "clippy"]

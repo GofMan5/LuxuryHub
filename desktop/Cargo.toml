@@ -1,0 +1,33 @@
+[workspace]
+resolver = "3"
+members = ["crates/lh-app", "crates/lh-ui"]
+default-members = ["crates/lh-app"]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.95"
+license = "MIT"
+repository = "https://github.com/GofMan5/LuxuryHub"
+authors = ["GofMan5"]
+
+# Имена пакетов проверены на crates.io: `gpui-ce` даёт библиотеку `gpui`,
+# а платформенный слой называется `gpui_ce_platform` — его приходится
+# алиасить, иначе `use gpui_platform::...` не разрешается.
+[workspace.dependencies]
+gpui = { package = "gpui-ce", version = "=0.3.0" }
+gpui_platform = { package = "gpui_ce_platform", version = "=0.3.0" }
+lh-ui = { path = "crates/lh-ui" }
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+unused_must_use = "deny"
+
+[workspace.lints.clippy]
+todo = "deny"
+dbg_macro = "deny"
+print_stdout = "deny"
+
+[profile.release]
+lto = "thin"
+codegen-units = 1

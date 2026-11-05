@@ -1,0 +1,22 @@
+[package]
+name = "lh-app"
+description = "Десктопный клиент LuxuryHub: окно и навигация."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[[bin]]
+name = "luxuryhub"
+path = "src/main.rs"
+
+[dependencies]
+gpui.workspace = true
+gpui_platform.workspace = true
+lh-ui.workspace = true
+
+[lints]
+workspace = true
