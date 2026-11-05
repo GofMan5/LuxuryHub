@@ -5,14 +5,20 @@
 //! file is the shape: state lives in [`AppShell`], rendering is pure, and the
 //! next section is one match arm away.
 
+use std::path::{Path, PathBuf};
+use std::time::{Duration, SystemTime};
+
 use gpui::{
-    App, Bounds, ClickEvent, Context, IntoElement, ParentElement, Render, Styled, Window,
+    App, AsyncApp, Bounds, ClickEvent, Context, IntoElement, ParentElement, Render, Styled, Window,
     WindowBounds, WindowOptions, div, prelude::*, px, size,
 };
 use gpui_platform::application;
 use lh_ui::{
     SIDEBAR_WIDTH, badge, card, eyebrow, heading, muted, nav_item, palette, separator, space,
 };
+
+/// How often the live theme file is checked while the client runs.
+const THEME_POLL_INTERVAL: Duration = Duration::from_millis(200);
 
 /// Sections of the left navigation. Order matters: the index is the state.
 const SECTIONS: [&str; 4] = ["Каталог", "Сделки", "Консьерж", "Настройки"];
@@ -154,6 +160,13 @@ impl AppShell {
 
 fn main() {
     application().run(|cx: &mut App| {
+        // The theme is read before the first frame, so the window opens already
+        // in the colours of `theme.ini` instead of flashing the built-in ones.
+        let theme = theme_path();
+        if let Some(path) = theme.as_deref() {
+            apply_theme(path);
+        }
+
         let bounds = Bounds::centered(None, size(px(1200.0), px(800.0)), cx);
 
         cx.open_window(
@@ -166,5 +179,74 @@ fn main() {
         .expect("окно не создалось");
 
         cx.activate(true);
+
+        if let Some(path) = theme {
+            watch_theme(cx, path);
+        }
     });
+}
+
+/// Where the live theme lives: `LUXURYHUB_THEME` if it is set, otherwise
+/// `desktop/theme.ini` beside the crates in a debug build. Release builds ship
+/// with the built-in palette and read a file only when told to.
+fn theme_path() -> Option<PathBuf> {
+    if let Some(explicit) = std::env::var_os("LUXURYHUB_THEME") {
+        return Some(PathBuf::from(explicit));
+    }
+
+    if cfg!(debug_assertions) {
+        // `crates/lh-app` → `desktop/theme.ini`; `ancestors` keeps the path free
+        // of `..` so it reads plainly in the log when the file has a typo.
+        let path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .ancestors()
+            .nth(2)?
+            .join("theme.ini");
+        if path.exists() {
+            return Some(path);
+        }
+    }
+
+    None
+}
+
+fn apply_theme(path: &Path) {
+    match lh_ui::load_palette(path) {
+        Ok(theme) => {
+            lh_ui::set_palette(theme.palette);
+            for warning in theme.warnings {
+                eprintln!("тема · {}: {warning}", path.display());
+            }
+        }
+        Err(error) => eprintln!("тема · {}: {error}", path.display()),
+    }
+}
+
+/// Watches the theme file and repaints the window when it changes on disk.
+///
+/// Rust code cannot be swapped into a running native binary, so colours are the
+/// one layer this can cover; everything else needs a rebuild (`make desktop-watch`).
+fn watch_theme(cx: &mut App, path: PathBuf) {
+    let mut last = modified(&path);
+
+    cx.spawn(async move |cx: &mut AsyncApp| {
+        loop {
+            cx.background_executor().timer(THEME_POLL_INTERVAL).await;
+
+            let current = modified(&path);
+            if current == last {
+                continue;
+            }
+            last = current;
+
+            apply_theme(&path);
+            cx.update(|cx| cx.refresh_windows());
+        }
+    })
+    .detach();
+}
+
+fn modified(path: &Path) -> Option<SystemTime> {
+    std::fs::metadata(path)
+        .ok()
+        .and_then(|meta| meta.modified().ok())
 }

@@ -2,7 +2,7 @@
 GO ?= go
 CARGO ?= cargo
 
-.PHONY: help backend-build backend-run backend-test desktop-build desktop-run desktop-check fmt lint check
+.PHONY: help backend-build backend-run backend-test desktop-build desktop-run desktop-watch desktop-check fmt lint check
 
 help: ## Показать список целей
 	@awk 'BEGIN {FS = ":.*## "} /^[a-zA-Z_-]+:.*## / {printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -21,6 +21,9 @@ desktop-build: ## Собрать клиент (release)
 
 desktop-run: ## Запустить клиент
 	cd desktop && $(CARGO) run -p lh-app
+
+desktop-watch: ## Пересобирать и перезапускать клиент на каждое сохранение (cargo-watch)
+	cd desktop && $(CARGO) watch -w crates -w Cargo.toml -x "run -p lh-app"
 
 desktop-check: ## Быстрая проверка клиента без линковки
 	cd desktop && $(CARGO) check --workspace

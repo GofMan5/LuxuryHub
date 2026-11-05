@@ -4,6 +4,9 @@
 //! elements that screens are built from. Screens only compose these helpers, so
 //! changing the look of the product means changing this crate, not every view.
 
+use std::path::Path;
+use std::sync::{OnceLock, RwLock};
+
 use gpui::{Div, FontWeight, ParentElement, Rgba, SharedString, Styled, div, px, rgb};
 
 /// Colour palette of the dark theme.
@@ -68,9 +71,102 @@ pub mod space {
 /// Width of the navigation column.
 pub const SIDEBAR_WIDTH: f32 = 248.0;
 
+/// Palette that rendering currently uses.
+///
+/// It lives in a lock rather than in a constant because the client can swap it
+/// while running: that is what makes a live theme file possible.
+static ACTIVE: OnceLock<RwLock<Palette>> = OnceLock::new();
+
+fn active() -> &'static RwLock<Palette> {
+    ACTIVE.get_or_init(|| RwLock::new(Palette::dark()))
+}
+
 /// Current palette; a single place to switch to a light theme later.
 pub fn palette() -> Palette {
-    Palette::dark()
+    match active().read() {
+        Ok(guard) => *guard,
+        Err(poisoned) => *poisoned.into_inner(),
+    }
+}
+
+/// Swaps the palette in place. The next frame renders with it, so the caller
+/// only has to repaint its windows.
+pub fn set_palette(palette: Palette) {
+    match active().write() {
+        Ok(mut guard) => *guard = palette,
+        Err(poisoned) => *poisoned.into_inner() = palette,
+    }
+}
+
+/// Outcome of reading a theme file.
+#[derive(Clone, Debug)]
+pub struct LoadedTheme {
+    /// Palette to install: the built-in dark theme plus the file's overrides.
+    pub palette: Palette,
+    /// Problems that did not stop the load, one message per offending line.
+    pub warnings: Vec<String>,
+}
+
+/// Reads `key = #RRGGBB` lines on top of [`Palette::dark`].
+///
+/// Unknown keys and unparsable colours do not fail the load: they are reported
+/// through [`LoadedTheme::warnings`], so a half-typed value keeps the client
+/// usable instead of blanking the window. A line starting with `#` is a comment;
+/// the `#` inside a colour is not.
+pub fn load_palette(path: &Path) -> std::io::Result<LoadedTheme> {
+    let text = std::fs::read_to_string(path)?;
+    let mut palette = Palette::dark();
+    let mut warnings = Vec::new();
+
+    for (index, line) in text.lines().enumerate() {
+        let line = line.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+
+        let Some((key, value)) = line.split_once('=') else {
+            warnings.push(format!("строка {}: нет знака «=»", index + 1));
+            continue;
+        };
+
+        let key = key.trim();
+        let raw = value.split_whitespace().next().unwrap_or_default();
+        let Some(colour) = parse_colour(raw) else {
+            warnings.push(format!(
+                "строка {}: «{raw}» — не цвет вида #RRGGBB",
+                index + 1
+            ));
+            continue;
+        };
+
+        let target = match key {
+            "background" => &mut palette.background,
+            "surface" => &mut palette.surface,
+            "surface_raised" => &mut palette.surface_raised,
+            "border" => &mut palette.border,
+            "text" => &mut palette.text,
+            "text_muted" => &mut palette.text_muted,
+            "accent" => &mut palette.accent,
+            "accent_soft" => &mut palette.accent_soft,
+            other => {
+                warnings.push(format!("строка {}: неизвестный ключ «{other}»", index + 1));
+                continue;
+            }
+        };
+
+        *target = colour;
+    }
+
+    Ok(LoadedTheme { palette, warnings })
+}
+
+fn parse_colour(raw: &str) -> Option<Rgba> {
+    let hex = raw.trim_start_matches('#');
+    if hex.len() != 6 || !hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+        return None;
+    }
+    let value = u32::from_str_radix(hex, 16).ok()?;
+    Some(rgb(value))
 }
 
 /// Small uppercase label above a heading.
@@ -140,7 +236,9 @@ pub fn nav_item(label: impl Into<SharedString>, active: bool) -> Div {
         .text_base();
 
     if active {
-        base.bg(p.accent_soft).text_color(p.accent).child(label.into())
+        base.bg(p.accent_soft)
+            .text_color(p.accent)
+            .child(label.into())
     } else {
         base.text_color(p.text_muted).child(label.into())
     }
